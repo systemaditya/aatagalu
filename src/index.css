@@ -1,0 +1,101 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,500;1,600;1,700;1,800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-headline: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Inter", sans-serif;
+
+  --color-csk: #f9cd05;
+  --color-mi: #004ba0;
+  --color-rcb: #cb3027;
+  --color-kkr: #3a225d;
+  --color-srh: #f26522;
+  --color-gt: #1b2133;
+  --color-pbks: #d11d26;
+  --color-dc: #004ba0;
+  --color-lsg: #0057a3;
+  --color-rr: #ea1a85;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  :root {
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --primary: #fcd00e;
+    --primary-foreground: #423500;
+    --secondary: #e2e8f0;
+    --secondary-foreground: #0f172a;
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+    --accent: #f1f5f9;
+    --accent-foreground: #0f172a;
+    --border: #e2e8f0;
+    --input: #e2e8f0;
+    --ring: #fcd00e;
+  }
+
+  .dark {
+    --background: #0d0d15;
+    --foreground: #f2effb;
+    --card: #13131b;
+    --card-foreground: #f2effb;
+    --primary: #ffe07d;
+    --primary-foreground: #635000;
+    --secondary: #252530;
+    --secondary-foreground: #f2effb;
+    --muted: #1f1f29;
+    --muted-foreground: #acaab5;
+    --accent: #252530;
+    --accent-foreground: #f2effb;
+    --border: #252530;
+    --input: #252530;
+    --ring: #ffe07d;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-body antialiased;
+  }
+}
+
+.glass-card {
+  @apply bg-card/60 backdrop-blur-xl border border-white/5 shadow-2xl;
+}
+
+.stadium-glow {
+  box-shadow: 0 0 40px -10px rgba(255, 224, 125, 0.15);
+}
+
+.electric-glow {
+  box-shadow: 0 0 20px rgba(255, 224, 125, 0.3);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
