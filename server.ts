@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs/promises";
-import { Match, User, Pick, Transaction, TEAMS } from "./src/types";
+import { Match, User, Pick, Transaction, TEAMS } from "./src/types.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,7 +98,7 @@ const db = new LocalDB();
 async function startServer() {
   await db.init();
   const app = express();
-  const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
