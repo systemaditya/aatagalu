@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local database
+db.json
+
+# Firebase configuration
+firebase-applet-config.json
+firebase-blueprint.json
+firestore.rules
+src/firebase.ts

@@ -138,7 +138,7 @@ const Header = ({ user, onSignOut }: { user: User | null, onSignOut: () => void 
           <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center rotate-12">
             <Trophy className="w-5 h-5 text-primary-foreground -rotate-12" />
           </div>
-          <span className="font-headline font-black italic text-primary hidden sm:inline">FRIENDLY IPL PICKS</span>
+          <span className="font-headline font-black italic text-primary hidden sm:inline">PADHI RUPAYALA PANCHAYITHI</span>
         </div>
 
         <div className="flex items-center gap-4">
@@ -224,8 +224,8 @@ const SignIn = ({ onSignIn }: { onSignIn: (username: string) => void }) => {
             <Trophy className="w-10 h-10 text-primary -rotate-12" />
           </motion.div>
           <div className="space-y-2">
-            <h1 className="text-4xl font-headline font-black italic text-primary tracking-tighter">Friendly IPL Picks 2026</h1>
-            <p className="text-muted-foreground text-sm">Friendly IPL prediction game for 2026 and future seasons using virtual coins only.</p>
+            <h1 className="text-4xl font-headline font-black italic text-primary tracking-tighter">Padhi Rupayala Panchayithi</h1>
+            <p className="text-muted-foreground text-sm">Pani pata leni aatagalu dabbulu leka padhi rupayala betting start chesaru</p>
           </div>
         </div>
 
@@ -1122,20 +1122,6 @@ export default function App() {
   };
 
   const handleRefreshOnline = async () => {
-    // Test Firestore connection on boot (first refresh)
-    const testConnection = async () => {
-      try {
-        const { getDocFromServer, doc } = await import('firebase/firestore');
-        const { db } = await import('./firebase');
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. The client is offline.");
-        }
-      }
-    };
-    testConnection();
-    
     setFetchingOnline(true);
     try {
       const [onlineMatches, onlineStats] = await Promise.all([

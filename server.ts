@@ -2,41 +2,101 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
-import admin from 'firebase-admin';
-import firebaseConfig from './firebase-applet-config.json' with { type: 'json' };
+import fs from "fs/promises";
 import { Match, User, Pick, Transaction, TEAMS } from "./src/types.js";
-
-import { getFirestore } from 'firebase-admin/firestore';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const DB_PATH = path.join(__dirname, "db.json");
 
-// Initialize Firebase Admin (Server SDK)
-// This bypasses security rules and is the standard for server-side code.
-const firebaseApp = admin.initializeApp();
-const db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  const errInfo = {
-    error: error instanceof Error ? error.message : String(error),
-    operationType,
-    path
+// --- LOCAL DB HELPER ---
+class LocalDB {
+  private data: {
+    users: Record<string, User>;
+    matches: Record<string, Match>;
+    picks: Record<string, Pick>;
+    transactions: Record<string, Transaction>;
+  } = {
+    users: {},
+    matches: {},
+    picks: {},
+    transactions: {},
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  // We throw a JSON string so the global error handler can return it as JSON
-  throw new Error(JSON.stringify(errInfo));
+
+  async init() {
+    try {
+      const content = await fs.readFile(DB_PATH, "utf-8");
+      this.data = JSON.parse(content);
+    } catch (error) {
+      console.log("No existing database found, creating new one.");
+      await this.save();
+    }
+  }
+
+  async save() {
+    await fs.writeFile(DB_PATH, JSON.stringify(this.data, null, 2));
+  }
+
+  getCollection<T extends keyof typeof this.data>(name: T) {
+    return {
+      doc: (id: string) => ({
+        get: async () => ({
+          exists: !!this.data[name][id],
+          data: () => this.data[name][id],
+        }),
+        set: async (val: any, options?: { merge?: boolean }) => {
+          if (options?.merge) {
+            this.data[name][id] = { ...this.data[name][id], ...val };
+          } else {
+            this.data[name][id] = val;
+          }
+          await this.save();
+        },
+        update: async (val: any) => {
+          this.data[name][id] = { ...this.data[name][id], ...val };
+          await this.save();
+        },
+        delete: async () => {
+          delete this.data[name][id];
+          await this.save();
+        },
+      }),
+      get: async () => ({
+        docs: Object.values(this.data[name]).map((val) => ({
+          data: () => val,
+          id: (val as any).id || (val as any).username || (val as any).matchId,
+        })),
+      }),
+      where: (field: string, op: string, value: any) => {
+        const filtered = Object.values(this.data[name]).filter((item: any) => item[field] === value);
+        return {
+          get: async () => ({
+            docs: filtered.map((val) => ({
+              data: () => val,
+            })),
+          }),
+        };
+      },
+    };
+  }
+
+  batch() {
+    const operations: (() => Promise<void>)[] = [];
+    return {
+      set: (ref: any, val: any, options?: any) => {
+        operations.push(() => ref.set(val, options));
+      },
+      commit: async () => {
+        for (const op of operations) await op();
+      },
+    };
+  }
 }
+
+const db = new LocalDB();
 
 async function startServer() {
+  await db.init();
   const app = express();
   const PORT = 3000;
 
@@ -49,7 +109,7 @@ async function startServer() {
     const { username } = req.body;
     if (!username) return res.status(400).json({ error: "Username required" });
 
-    const userRef = db.collection("users").doc(username);
+    const userRef = db.getCollection("users").doc(username);
     try {
       const userSnap = await userRef.get();
       if (!userSnap.exists) {
@@ -61,7 +121,7 @@ async function startServer() {
         await userRef.set(newUser);
         
         const transId = `t-init-${username}`;
-        await db.collection("transactions").doc(transId).set({
+        await db.getCollection("transactions").doc(transId).set({
           id: transId,
           username,
           amount: 1000,
@@ -79,7 +139,7 @@ async function startServer() {
   });
 
   app.get("/api/user/:username", async (req, res, next) => {
-    const userRef = db.collection("users").doc(req.params.username);
+    const userRef = db.getCollection("users").doc(req.params.username);
     try {
       const userSnap = await userRef.get();
       if (!userSnap.exists) return res.status(404).json({ error: "User not found" });
@@ -92,7 +152,7 @@ async function startServer() {
   // Matches
   app.get("/api/matches", async (req, res, next) => {
     try {
-      const matchesSnap = await db.collection("matches").get();
+      const matchesSnap = await db.getCollection("matches").get();
       const matches = matchesSnap.docs.map(doc => doc.data() as Match);
       res.json(matches);
     } catch (error) {
@@ -107,7 +167,7 @@ async function startServer() {
     try {
       const batch = db.batch();
       for (const newMatch of newMatches) {
-        const matchRef = db.collection("matches").doc(newMatch.id);
+        const matchRef = db.getCollection("matches").doc(newMatch.id);
         batch.set(matchRef, newMatch, { merge: true });
       }
       await batch.commit();
@@ -120,7 +180,7 @@ async function startServer() {
   // Picks
   app.get("/api/picks/:username", async (req, res, next) => {
     try {
-      const picksSnap = await db.collection("picks")
+      const picksSnap = await db.getCollection("picks")
         .where("username", "==", req.params.username)
         .get();
       const userPicks = picksSnap.docs.map(doc => doc.data() as Pick);
@@ -134,8 +194,8 @@ async function startServer() {
     const { username, matchId, teamId } = req.body;
     
     try {
-      const userRef = db.collection("users").doc(username);
-      const matchRef = db.collection("matches").doc(matchId);
+      const userRef = db.getCollection("users").doc(username);
+      const matchRef = db.getCollection("matches").doc(matchId);
       
       const [userSnap, matchSnap] = await Promise.all([
         userRef.get(),
@@ -152,7 +212,7 @@ async function startServer() {
       if (match.status !== "Upcoming") return res.status(400).json({ error: "Betting locked" });
       
       const pickId = `${username}_${matchId}`;
-      const pickRef = db.collection("picks").doc(pickId);
+      const pickRef = db.getCollection("picks").doc(pickId);
       const pickSnap = await pickRef.get();
       
       if (!pickSnap.exists) {
@@ -162,7 +222,7 @@ async function startServer() {
         await userRef.update({ coins: newCoins });
         
         const transId = `t-bet-${username}-${matchId}-${Date.now()}`;
-        await db.collection("transactions").doc(transId).set({
+        await db.getCollection("transactions").doc(transId).set({
           id: transId,
           username,
           matchId,
@@ -197,7 +257,7 @@ async function startServer() {
   // Wallet / History
   app.get("/api/history/:username", async (req, res, next) => {
     try {
-      const transSnap = await db.collection("transactions")
+      const transSnap = await db.getCollection("transactions")
         .where("username", "==", req.params.username)
         .get();
       const history = transSnap.docs
@@ -212,7 +272,7 @@ async function startServer() {
   app.post("/api/wallet/add", async (req, res, next) => {
     const { username, amount } = req.body;
     try {
-      const userRef = db.collection("users").doc(username);
+      const userRef = db.getCollection("users").doc(username);
       const userSnap = await userRef.get();
       if (!userSnap.exists) return res.status(404).json({ error: "User not found" });
 
@@ -221,7 +281,7 @@ async function startServer() {
       await userRef.update({ coins: newCoins });
 
       const transId = `t-add-${username}-${Date.now()}`;
-      await db.collection("transactions").doc(transId).set({
+      await db.getCollection("transactions").doc(transId).set({
         id: transId,
         username,
         amount,
@@ -239,7 +299,7 @@ async function startServer() {
   app.post("/api/wallet/withdraw", async (req, res, next) => {
     const { username, amount } = req.body;
     try {
-      const userRef = db.collection("users").doc(username);
+      const userRef = db.getCollection("users").doc(username);
       const userSnap = await userRef.get();
       if (!userSnap.exists) return res.status(404).json({ error: "User not found" });
 
@@ -250,7 +310,7 @@ async function startServer() {
       await userRef.update({ coins: newCoins });
 
       const transId = `t-withdraw-${username}-${Date.now()}`;
-      await db.collection("transactions").doc(transId).set({
+      await db.getCollection("transactions").doc(transId).set({
         id: transId,
         username,
         amount: -amount,
@@ -268,10 +328,10 @@ async function startServer() {
   // Leaderboard
   app.get("/api/leaderboard", async (req, res, next) => {
     try {
-      const usersSnap = await db.collection("users").get();
+      const usersSnap = await db.getCollection("users").get();
       const allUsers = usersSnap.docs.map(doc => doc.data() as User);
       
-      const picksSnap = await db.collection("picks").get();
+      const picksSnap = await db.getCollection("picks").get();
       const allPicks = picksSnap.docs.map(doc => doc.data() as Pick);
 
       const leaderboard = allUsers
@@ -296,7 +356,7 @@ async function startServer() {
   // Reports
   app.get("/api/reports", async (req, res, next) => {
     try {
-      const picksSnap = await db.collection("picks").get();
+      const picksSnap = await db.getCollection("picks").get();
       const allPicks = picksSnap.docs.map(doc => doc.data() as Pick);
 
       const totalBets = allPicks.length;
@@ -325,10 +385,10 @@ async function startServer() {
     const endDate = new Date(end as string);
 
     try {
-      const transSnap = await db.collection("transactions").get();
+      const transSnap = await db.getCollection("transactions").get();
       const allTransactions = transSnap.docs.map(doc => doc.data() as Transaction);
 
-      const matchesSnap = await db.collection("matches").get();
+      const matchesSnap = await db.getCollection("matches").get();
       const allMatches = matchesSnap.docs.map(doc => doc.data() as Match);
 
       const weeklyTransactions = allTransactions.filter(t => {
@@ -380,7 +440,7 @@ async function startServer() {
     const { matchId, winnerId } = req.body;
     
     try {
-      const matchRef = db.collection("matches").doc(matchId);
+      const matchRef = db.getCollection("matches").doc(matchId);
       const matchSnap = await matchRef.get();
       if (!matchSnap.exists) return res.status(404).json({ error: "Match not found" });
 
@@ -391,24 +451,25 @@ async function startServer() {
       });
 
       // Process picks
-      const picksSnap = await db.collection("picks")
-        .where("matchId", "==", matchId)
-        .get();
+      const picksSnap = await db.getCollection("picks").get();
+      const allPicks = picksSnap.docs.map(doc => doc.data() as Pick);
+      const matchPicks = allPicks.filter(p => p.matchId === matchId);
       
-      for (const pickDoc of picksSnap.docs) {
-        const p = pickDoc.data() as Pick;
-        const userRef = db.collection("users").doc(p.username);
+      for (const p of matchPicks) {
+        const userRef = db.getCollection("users").doc(p.username);
         const userSnap = await userRef.get();
         
         if (userSnap.exists) {
           const user = userSnap.data() as User;
+          const pickRef = db.getCollection("picks").doc(`${p.username}_${matchId}`);
+
           if (p.teamId === winnerId) {
-            await pickDoc.ref.update({ status: "Won" });
+            await pickRef.update({ status: "Won" });
             const newCoins = user.coins + 20;
             await userRef.update({ coins: newCoins });
             
             const transId = `t-win-${p.username}-${matchId}`;
-            await db.collection("transactions").doc(transId).set({
+            await db.getCollection("transactions").doc(transId).set({
               id: transId,
               username: p.username,
               matchId,
@@ -418,7 +479,7 @@ async function startServer() {
               description: `Won bet on ${winnerId}`,
             });
           } else {
-            await pickDoc.ref.update({ status: "Lost" });
+            await pickRef.update({ status: "Lost" });
           }
         }
       }
@@ -444,7 +505,7 @@ async function startServer() {
     });
   }
 
-  // Global error handler - returns JSON instead of HTML
+  // Global error handler
   app.use((err: any, req: any, res: any, next: any) => {
     console.error("Server Error:", err);
     res.status(500).json({ 
